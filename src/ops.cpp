@@ -11,12 +11,20 @@ namespace LLaMA_Tensor{
     }
 
     void CheckTensorMulti(const Tensor& t1, const Tensor& t2){
-        t1.CheckDim(2);
-        t2.CheckDim(2);
-        if(t1.shape[1] != t2.shape[0]){
+        CheckTensorZero(t1);
+        CheckTensorZero(t2);
+        if(t1.dim() > 2 || t2.dim() > 2){
+            throw std::runtime_error("MatrixMulti only supports 1D vectors and 2D matrices");
+        }
+        //一维向量方向约定(PyTorch matmul 风格):
+        //  1D 左操作数视为行向量 {1, n}, 其"列数"为 shape[0];
+        //  1D 右操作数视为列向量 {n, 1}, 其"行数"恒为 shape[0].
+        const int t1_cols = (t1.dim() == 1) ? t1.shape[0] : t1.shape[1];
+        const int t2_rows = t2.shape[0];
+        if(t1_cols != t2_rows){
             t1.TensorPrint();
             t2.TensorPrint();
-            throw std::runtime_error("Tensors' col and row are not matched, they can not multiply.");
+            throw std::runtime_error("tensors' dimensions are not matched");
         }
     }
 
@@ -27,6 +35,12 @@ namespace LLaMA_Tensor{
     }
 
     Tensor TensorTrans(const Tensor& x){
+        if(x.dim() == 1){
+            //一维向量视为行向量 {1, n}, 转置得到列向量 {n, 1}
+            Tensor col(x);
+            col.shape = {x.shape[0], 1};
+            return col;
+        }
         x.CheckDim(2);
         Tensor trans;
         trans.data = std::vector<float>(x.TensorNum(), 0.0f);
@@ -41,24 +55,43 @@ namespace LLaMA_Tensor{
 
     Tensor MatrixMulti(const Tensor& t1, const Tensor& t2){
         CheckTensorMulti(t1, t2);
-        int M = t1.shape[0];
-        int K = t1.shape[1];
-        int N = t2.shape[1];
+        //一维操作数按行/列向量提升: 1D 左->行 {1,n}, 1D 右->列 {n,1}
+        const int M = (t1.dim() == 1) ? 1 : t1.shape[0];
+        const int K = (t1.dim() == 1) ? t1.shape[0] : t1.shape[1];
+        const int N = (t2.dim() == 1) ? 1 : t2.shape[1];
+        const bool out2d = (t1.dim() == 2 && t2.dim() == 2);
         Tensor multi_tensor;
         multi_tensor.data = std::vector<float>(M * N, 0.0f);
-        multi_tensor.shape = {M, N};
+        //输出形状按 PyTorch matmul 语义去掉被提升的向量维度:
+        //  1D×1D -> {1}(点积标量), 1D×2D -> {N}, 2D×1D -> {M}, 2D×2D -> {M,N}
+        if(out2d){
+            multi_tensor.shape = {M, N};
+        }else if(t1.dim() == 1 && t2.dim() == 1){
+            multi_tensor.shape = {1};
+        }else{
+            multi_tensor.shape = {(t1.dim() == 1) ? N : M};
+        }
         for (int i = 0; i < M; ++i) {
             for (int k = 0; k < K; ++k) {
-                float a = t1.At2(i, k);
+                const float a = (t1.dim() == 1) ? t1.At1(k) : t1.At2(i, k);
+                if(out2d){
                     for (int j = 0; j < N; ++j) {
                         multi_tensor.At2(i, j) += a * t2.At2(k, j);
                     }
+                }else if(t2.dim() == 1){
+                    multi_tensor.At1(i) += a * t2.At1(k);
+                }else{ // t1 1D, t2 2D (M == 1), 输出 1D {N}
+                    for (int j = 0; j < N; ++j) {
+                        multi_tensor.At1(j) += a * t2.At2(k, j);
+                    }
+                }
             }
         }
         return multi_tensor;
     }
 
     Tensor Linear(const Tensor& x, const Tensor& weight){
+        weight.CheckDim(2);   // weight 必须是 2D (out_features × in_features)
         return MatrixMulti(x, TensorTrans(weight));
     }
 

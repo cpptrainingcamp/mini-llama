@@ -8,8 +8,14 @@ namespace LLaMA_Tensor{
         Normal,
         NeoX
     };
-    //Tensor相乘
+    //Tensor相乘: 支持 1D 向量与 2D 矩阵 (PyTorch matmul 风格)
+    //  方向约定: 1D 左操作数视为行向量 {1,n}, 1D 右操作数视为列向量 {n,1}
+    //  两个同长 1D 向量相乘 = 点积
+    //  输出去掉被提升的向量维度: 1D×1D -> {1}, 1D×2D -> {N}, 2D×1D -> {M}, 2D×2D -> {M,N}
+    //  高于 2 维的输入抛 runtime_error
     Tensor MatrixMulti(const Tensor& t1, const Tensor& t2);
+    //转置: 2D 矩阵转置; 1D 向量视为行向量 {1,n}, 转置为列向量 {n,1}
+    Tensor TensorTrans(const Tensor& x);
     //linear算子
     Tensor Linear(const Tensor& x, const Tensor& weight);
     //RMSNorm归一化
