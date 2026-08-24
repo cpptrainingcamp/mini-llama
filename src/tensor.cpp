@@ -3,6 +3,7 @@
 #include <iostream>
 #include <functional>
 #include <iomanip>
+#include <algorithm>
 
 namespace LLaMA_Tensor {
 
@@ -15,19 +16,35 @@ void Tensor::CheckDim(int dim) const{
 
 Tensor::Tensor(const std::vector<int>& tensor_shape, float fill)
     :shape(tensor_shape){
-    int sum = std::accumulate(tensor_shape.begin(), tensor_shape.end(), 1, std::multiplies<int>());
+    auto it = std::find_if(tensor_shape.begin(), tensor_shape.end(), [](int x){return (x <= 0);});
+    if(it != tensor_shape.end()){
+        throw std::invalid_argument("tensor's shape args must be positive");
+    }
+    long sum = std::accumulate(tensor_shape.begin(), tensor_shape.end(), 1L, std::multiplies<long>());
     data = std::vector<float>(sum, fill);
 }
 
 size_t Tensor::FlatIndex(const std::vector<int>& MultiIndex) const{
     //维度不匹配检查
     CheckDim(MultiIndex.size());
-
+    //空索引检查
+    if(!MultiIndex.size()){
+        throw std::runtime_error("MultiIndex can not be empty");
+    }
+    auto it = std::find_if(MultiIndex.begin(), MultiIndex.end(), [](int x){return (x < 0);});
+    //负索引检查
+    if(it != MultiIndex.end()){
+        throw std::invalid_argument("MultiIndex's args can not be negative");
+    }
     size_t flat = 0;
     size_t stride = 1;
     for(int i = shape.size()-1;i>=0;i--){
         flat += static_cast<size_t>(MultiIndex[i]) * stride;
         stride *= static_cast<size_t>(shape[i]);
+    }
+    //上界检查
+    if(flat > (TensorNum() - 1)){
+        throw std::out_of_range("MultiIndex is out of range");
     }
     return flat;
 }
@@ -40,13 +57,13 @@ float Tensor::At(const std::vector<int>& MultiIndex) const {
 //只读访问
 float Tensor::At1(int i) const {
     CheckDim(1);
-    return data[i];
+    return data[FlatIndex({i})];
 }
 
 //可写访问
 float& Tensor::At1(int i) {
     CheckDim(1);
-    return data[i];
+    return data[FlatIndex({i})];
 }
 
 //只读访问
