@@ -116,23 +116,25 @@ namespace{
                 return false;
             }
             int max_id = 0;
-            for(auto obj : doc){
-                int id;
-                std::string_view content_v;
-                bool special;
-                auto err0 = obj["id"].get(id);
-                auto err1 = obj["content"].get(content_v);
-                auto err2 = obj["special"].get(special);
-                if(err0 || err1 || err2){
-                    std::cerr << "get token error" << std::endl;
+            for(auto field : doc.get_object()){
+                std::string_view token_view;
+                auto key_err = field.unescaped_key().get(token_view);
+                if (key_err) {
+                    std::cerr << "Error getting key: " << key_err << std::endl;
                     continue;
                 }
-                std::string content = std::string(content_v);
-                token_2_id_[content] = id;
+                int64_t id_value;
+                auto val_err = field.value().get(id_value);
+                if (val_err) {
+                    std::cerr << "Error getting value for token '" << token_view << "': " << val_err << std::endl;
+                    continue;
+                }
+                int id = static_cast<int>(id_value);
                 max_id = id > max_id ? id : max_id;
                 id_2_token_.resize(max_id + 1);
-                id_2_token_[id] = content;
-
+                id_2_token_[id] = token_view;
+                std::string content(token_view);
+                token_2_id_[content] = id;
                 if(CheckHead(content, "<|") && CheckTail(content, "|>")){
                     special_token_.push_back({content, id});
                 }
@@ -212,8 +214,7 @@ namespace{
         int pos = 0;
         //最长匹配特殊token
         for(const auto& x : special_token_){
-            std::string_view str = text.substr(pos, x.first.size());
-            if(str == x.first){
+            if(text.compare(0, x.first.size(), x.first) == 0){
                 result.push_back(x.second);
                 pos += x.first.size();
                 break;
@@ -225,23 +226,28 @@ namespace{
             std::pair<std::string, int> another_sp;
             bool find_another = false;
             //找后一个特殊token或末尾
-            for(const auto& x : special_token_){
-                auto it = text.find(x.first, pos);
-                if(it != std::string::npos){
-                    end = it;
-                    pos = it + x.first.size();
-                    another_sp = x;
-                    find_another = true;
-                    break;
+            for(;pos < text.size();pos++){
+                if(CheckHead(text.substr(pos, 2), "<|")){
+                    for(const auto& x : special_token_){
+                        if(text.compare(pos, x.first.size(), x.first) == 0){
+                            end = pos;
+                            pos += x.first.size();
+                            another_sp = x;
+                            find_another = true;
+                            break;
+                        }
+                    }
                 }
+                if(find_another) break;
             }
+
             if(!find_another){
                 end = text.size();
                 pos = end + 1;
             }
             //获取正常字符的unicode
             std::vector<std::string> unicode_word;
-            std::string_view seg = text.substr(start, end);
+            std::string_view seg(text.data() + start, end - start);
             for(unsigned char c : seg){
                 if(c >= byte_2_unicode_.size()){
                     std::cerr << "Invalid character" << std::endl;

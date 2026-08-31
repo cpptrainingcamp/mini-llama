@@ -38,8 +38,8 @@ namespace LLaMA_Tensor{
             }else if(content == "<unk>"){
                 unk_id_ = id;
             }
+            vocab_size_ = (id + 1) > vocab_size_ ? (id + 1) : vocab_size_;
         }
-        vocab_size_ = id_2_content.size();
         std::sort(content_2_id.begin(), content_2_id.end(), 
         [](const auto& a, const auto& b){
             return a.first.size() > b.first.size();
@@ -53,6 +53,7 @@ namespace LLaMA_Tensor{
         while(pos < text.size()){
             bool match = false;
             for(const auto& token : content_2_id){
+                if(token.first.empty()) continue;
                 std::string_view content = token.first;
                 if(text.compare(pos, content.size(), content) == 0){
                     tokens_id.push_back(token.second);
