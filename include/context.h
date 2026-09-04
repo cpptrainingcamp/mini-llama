@@ -1,7 +1,7 @@
 #pragma once
 
 #include "kv_cache.h"
-//#include "model.h"
+#include "model.h"
 
 namespace LLaMA_Tensor{
     struct Context{
