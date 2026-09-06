@@ -18,8 +18,8 @@ Batch Batch::Prefill(std::vector<int> tokens, int start_pos){
     }
     return batch;
 }
-
-Tensor ForwardBatch(Context& ctx, const Model& model,
+/*
+Tensor ForwardBatch(Context& ctx, const MiniLlamaModel& model,
                     const Batch& batch) {
   if (batch.num_tokens() == 0) {
     throw std::runtime_error("ForwardBatch: empty batch");
@@ -37,4 +37,5 @@ Tensor ForwardBatch(Context& ctx, const Model& model,
   }
   return logits;
 }
+*/
 }
