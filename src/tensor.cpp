@@ -110,7 +110,7 @@ float* Tensor::RowPtr(int row){
 void Tensor::ReshapeCheck(const std::vector<int>& new_shape){
     int new_num = std::accumulate(new_shape.begin(), new_shape.end(), 1, std::multiplies<int>());
     if(TensorNum() != new_num){
-        throw std::runtime_error("elements count is not mathed");
+        throw std::runtime_error("elements count is not matched");
     }
     shape = new_shape;
 }

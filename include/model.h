@@ -6,12 +6,9 @@
 #include <vector>
 
 #include "tensor.h"
+#include "ops.h"
 
 namespace LLaMA_Tensor{
-enum class RopeType{
-    Normal,
-    NeoX
-};
 //模型超参数
 struct ModelConfig{
     int vocab_size = 128;
@@ -24,9 +21,9 @@ struct ModelConfig{
     int max_seq_len = 128;
     float rope_theta = 10000.0f;
     float rms_norm_eps = 1e-5f;
-    RopeType rope_type = RopeType::Normal;
+    RoPEtype rope_type = RoPEtype::Normal;
 };
-//单层Transformer实现
+//单层Transformer权重信息
 struct LayerWeights {
   Tensor attention_norm;   // [dim] F32 — 注意力前的 RMSNorm 权重
   Tensor wq;               // [n_heads * head_dim, dim] F32 — Q 投影

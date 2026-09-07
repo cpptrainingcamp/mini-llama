@@ -26,5 +26,6 @@ size_t ModelWeightBytes(const MiniLlamaModel& model){
         bytes += TensorBytes(lw.wq);
         bytes += TensorBytes(lw.wv);
     }
+    return bytes;
 }
 }
