@@ -19,10 +19,11 @@ void ValidateForwardInputs(const Context& ctx, const MiniLlamaModel& model, int 
         throw std::runtime_error("model's layers are not mathed with config's, need: "
              + std::to_string(model.config.n_layers));
     }
-    if(model.token_embedding.shape[0] < model.config.vocab_size){
+    if(model.token_embedding.TensorNum() < model.config.vocab_size * model.config.dim){
         throw std::runtime_error("token embedding's size is not enough, it should be >= "
              + std::to_string(model.config.vocab_size));
     }
+    model.token_embedding.CheckDim(2);
     if(model.token_embedding.shape[1] != model.config.dim){
         throw std::runtime_error("the token embedding vector dimension is not matched with the config's, it should be: "
              + std::to_string(model.config.dim));
