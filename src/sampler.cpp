@@ -29,10 +29,10 @@ void ValidateTopK(int top_k){
     }
 }
 //随机数采样，若temperature极小，则退化为贪婪采样
-int SampleFromCandidates(const std::vector<std::pair<float, int>> candidates, float temperature, std::mt19937& rng){
+int SampleFromCandidates(const std::vector<std::pair<float, int>>& candidates, float temperature, std::mt19937& rng){
     if(temperature < kGreedyTemperature){
         int best = candidates[0].second;
-        int best_val = candidates[0].first;
+        float best_val = candidates[0].first;
         for(size_t i = 0;i < candidates.size();i++){
             if(candidates[i].first > best_val){
                 best_val = candidates[i].first;
