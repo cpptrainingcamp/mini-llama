@@ -143,3 +143,4 @@ int Sampler::Sample(const Tensor& logits){
     return SampleTemperature(logits);
 }
 }
+
