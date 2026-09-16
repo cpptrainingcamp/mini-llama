@@ -245,7 +245,7 @@ TokenizerInfo ParseTokenizerJson(const std::string& content){
     tokenizer.eos_id = ParseOptionalIntField(obj, "eos_id", tokenizer.eos_id);
     tokenizer.unk_id = ParseOptionalIntField(obj, "unk_id", tokenizer.unk_id);
 
-    if(tokenizer.type != "ascii" && tokenizer.path != "json_vocab"){
+    if(tokenizer.type != "ascii" && tokenizer.type != "json_vocab"){
         throw std::runtime_error("unsupported tokenizer type: " + tokenizer.type);
     }
     if(tokenizer.path.empty() && tokenizer.type == "json_vocab"){
