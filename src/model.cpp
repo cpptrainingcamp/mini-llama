@@ -5,6 +5,11 @@ namespace{
 size_t TensorBytes(const Tensor& tensor){
     return tensor.TensorNum() * sizeof(float);
 }
+
+size_t TensorBytes(const QuantizedTensor& q_tensor){
+    return q_tensor.ele_num() * sizeof(float);
+}
+
 }
 
 size_t ModelWeightBytes(const MiniLlamaModel& model){
