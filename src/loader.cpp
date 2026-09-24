@@ -1,4 +1,5 @@
 #include "loader.h"
+#include "quantized_tensor.h"
 
 #include <algorithm>
 #include <cctype>
@@ -251,6 +252,11 @@ TokenizerInfo ParseTokenizerJson(const std::string& content){
     if(tokenizer.path.empty() && tokenizer.type == "json_vocab"){
         throw std::runtime_error("json_vocab path is empty");
     }
+    if(tokenizer.bos_id == tokenizer.eos_id || tokenizer.bos_id == tokenizer.unk_id
+         || tokenizer.eos_id == tokenizer.unk_id){
+        throw std::runtime_error("bos, eos, unk ids can not be equal(bos: " + std::to_string(tokenizer.bos_id)
+         + " eos: " + std::to_string(tokenizer.eos_id) + " unk: " + std::to_string(tokenizer.unk_id));
+    }
     if(tokenizer.bos_id < 0 || tokenizer.eos_id < 0 || tokenizer.unk_id < 0){
         throw std::out_of_range("special ids must be non-negative");
     }
@@ -331,7 +337,7 @@ ModelConfig ParseConfigJson(const std::string& content){
     ModelConfig config;
     config.vocab_size = ParseRequiredInt(content, "vocab_size");
     config.dim = ParseRequiredInt(content, "dim");
-    config.hiddendim = ParseRequiredInt(content, "hiddendim");
+    config.hiddendim = ParseRequiredInt(content, "hidden_dim");
     config.n_layers = ParseRequiredInt(content, "n_layers");
     config.n_heads = ParseRequiredInt(content, "n_heads");
     config.n_kv_heads = ParseRequiredInt(content, "n_kv_heads");
@@ -640,17 +646,17 @@ MiniLlamaModel LoadModel(const std::string& config_path, const std::string& weig
             LayerWeights& lw = model.layers[i];
             const std::string prefix = "layers." + std::to_string(i) + ".";
             lw.attention_norm = LoadTensorByName(wf, tensor_map, prefix + "attention_norm");
-            lw.wq = LoadTensorByName(wf, tensor_map, prefix + "wq");
-            lw.wk = LoadTensorByName(wf, tensor_map, prefix + "wk");
-            lw.wv = LoadTensorByName(wf, tensor_map, prefix + "wv");
+            lw.wq = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wq"));
+            lw.wk = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wk"));
+            lw.wv = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wv"));
             lw.wo = LoadTensorByName(wf, tensor_map, prefix + "wo");
             lw.ffn_norm = LoadTensorByName(wf, tensor_map, prefix + "ffn_norm");
-            lw.w_up = LoadTensorByName(wf, tensor_map, prefix + "w_up");
-            lw.w_down = LoadTensorByName(wf,tensor_map, prefix + "w_down");
-            lw.w_gate = LoadTensorByName(wf, tensor_map, prefix + "w_gate");
+            lw.w_up = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "w_up"));
+            lw.w_down = Tensor2QTensor(LoadTensorByName(wf,tensor_map, prefix + "w_down"));
+            lw.w_gate = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "w_gate"));
         }
         model.final_norm = LoadTensorByName(wf, tensor_map, "final_norm");
-        model.lm_head = LoadTensorByName(wf, tensor_map, "lm_head");
+        model.lm_head = Tensor2QTensor(LoadTensorByName(wf, tensor_map, "lm_head"));
     }catch(const std::exception& e){
         return LoadFailure(e.what());
     }
