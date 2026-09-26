@@ -739,6 +739,19 @@ bool GgufGetMetadataFloat(const std::string& path, const std::string& key,
   }
 }
 
+bool GgufGetMetadataString(const std::string& path, const std::string& key,
+                           std::string& out) {
+    std::ifstream f;
+    uint32_t type = 0;
+    if (!OpenAndFindMetadataKey(f, path, key, type)) {
+        return false;
+    }
+    if (type != kGgufTypeString) {
+        return false;
+    }
+    return ReadString(f, out);
+}
+
 bool GgufGetMetadataStringArray(const std::string& path, const std::string& key,
                                 std::vector<std::string>& out) {
   std::ifstream f;
