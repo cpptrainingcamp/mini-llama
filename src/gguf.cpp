@@ -412,6 +412,7 @@ bool GgufReader::Load(const std::string& path){
         }
         if(!ReadValueAsString(f, kv.type, kv.value_str)){
             load_error = "fail to read the value of metadata[" + std::to_string(i) + "]";
+            return false;
         }
         metadata.push_back(std::move(kv));
     }
@@ -429,6 +430,11 @@ bool GgufReader::Load(const std::string& path){
             load_error = "fail to read the dimension of tensors[" + std::to_string(i) + "]: " + info.name;
             return false;
         }
+        if (n_dims == 0 || n_dims > kMaxTensorDims) {
+            load_error = "invalid tensor n_dims for: " + info.name;
+            return false;
+        }
+
         info.shape.resize(n_dims);
         for(uint32_t d = 0;d < n_dims;d++){
             if(!ReadU64(f, info.shape[d])){
