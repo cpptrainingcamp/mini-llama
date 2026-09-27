@@ -5,9 +5,9 @@
 namespace LLaMA_Tensor{
 size_t QuantizedTensor::ele_num() const{
     if(shape.size() == 0){
-        return 0;
+        return 1;
     }
-    return std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
+    return std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
 }
 
 std::string QuantizedTensor::ShapeString() const{
