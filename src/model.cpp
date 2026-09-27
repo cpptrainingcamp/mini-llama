@@ -7,7 +7,17 @@ size_t TensorBytes(const Tensor& tensor){
 }
 
 size_t TensorBytes(const QuantizedTensor& q_tensor){
-    return q_tensor.ele_num() * sizeof(float);
+    switch (q_tensor.type) {
+        case QuantType::kF32:
+        return q_tensor.f32_data.size() * sizeof(float);
+        case QuantType::kQ80:
+        return q_tensor.q80_data.size() * sizeof(BlockQ80);
+        case QuantType::kQ40:
+        return q_tensor.q40_data.size() * sizeof(BlockQ40);
+        case QuantType::kQ41:
+        return q_tensor.q41_data.size() * sizeof(BlockQ41);
+    }
+    return 0;
 }
 
 }
