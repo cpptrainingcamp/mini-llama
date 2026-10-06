@@ -33,7 +33,7 @@ struct LayerWeights {
   Tensor bq;               // optional [n_heads * head_dim] F32 — Q 偏置
   Tensor bk;               // optional [n_kv_heads * head_dim] F32 — K 偏置
   Tensor bv;               // optional [n_kv_heads * head_dim] F32 — V 偏置
-  Tensor wo;               // [dim, n_heads * head_dim] F32 — 注意力输出投影
+  QuantizedTensor wo;               // [dim, n_heads * head_dim] F32 — 注意力输出投影
   Tensor ffn_norm;         // [dim] F32 — FFN 前的 RMSNorm 权重
   QuantizedTensor w_gate;           // [hidden_dim, dim] F32 — SwiGLU 门控投影
   QuantizedTensor w_up;             // [hidden_dim, dim] F32 — SwiGLU 上投影

@@ -50,7 +50,7 @@ Tensor AddOptionalBias(const Tensor& x, const Tensor& bias, const std::string& c
     return result;
 }
 
-Tensor ForwardLinear(const MiniLlamaModel& model, const std::string& name, const Tensor& x, const Tensor& weight){
+Tensor ForwardLinear(const MiniLlamaModel& model, const std::string& name, const Tensor& x, const QuantizedTensor& weight){
     return Linear(x, weight);
 }
 

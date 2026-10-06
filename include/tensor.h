@@ -40,6 +40,7 @@ namespace LLaMA_Tensor{
         //打印张量
         void TensorPrint() const;
 
+
         //维度匹配检查
         void CheckDim(int dim) const;
     };

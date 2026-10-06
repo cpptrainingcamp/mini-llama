@@ -1,6 +1,9 @@
 #pragma once
 
 #include "tensor.h"
+#include "matmul_dispatch.h"
+#include "quantized_tensor.h"
+#include "quant.h"
 
 namespace LLaMA_Tensor{
     //旋转位置编码风格
@@ -18,6 +21,7 @@ namespace LLaMA_Tensor{
     Tensor TensorTrans(const Tensor& x);
     //linear算子
     Tensor Linear(const Tensor& x, const Tensor& weight);
+    Tensor Linear(const Tensor& x, const QuantizedTensor& weight);
     //RMSNorm归一化
     Tensor RMSNorm(const Tensor& x, const Tensor& weight, float eps);
     //softmax：相关性得分转换为概率
