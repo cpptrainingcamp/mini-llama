@@ -890,42 +890,42 @@ Tensor MatmulQ40(const std::vector<BlockQ40>& weight, const Tensor& input,
 // Benchmark helpers
 // ---------------------------------------------------------------------------
 float CompareMatmulError(const Tensor& weight, const Tensor& input) {
-  Tensor f32_result = MatrixMulti(weight, input);
-  std::vector<BlockQ80> qweight = QuantizedToQ80(weight);
-  Tensor q8_result = MatmulQ80(qweight, input, weight.shape);
+    Tensor f32_result = MatrixMulti(weight, input);
+    std::vector<BlockQ80> qweight = QuantizedToQ80(weight);
+    Tensor q8_result = MatmulQ80(qweight, input, weight.shape);
 
-  if (f32_result.shape != q8_result.shape) {
-    throw std::runtime_error("CompareMatmulError: shape mismatch");
-  }
-
-  float max_err = 0.0f;
-  for (size_t i = 0; i < f32_result.TensorNum(); ++i) {
-    float err = std::abs(f32_result.data[i] - q8_result.data[i]);
-    if (err > max_err) {
-      max_err = err;
+    if (f32_result.shape != q8_result.shape) {
+        throw std::runtime_error("CompareMatmulError: shape mismatch");
     }
-  }
-  return max_err;
+
+    float max_err = 0.0f;
+    for (size_t i = 0; i < f32_result.TensorNum(); ++i) {
+        float err = std::abs(f32_result.data[i] - q8_result.data[i]);
+        if (err > max_err) {
+        max_err = err;
+        }
+    }
+    return max_err;
 }
 
 float CompareQ40Error(const Tensor& weight, const Tensor& input) {
-  Tensor f32_result = Linear(input, weight);
-  std::vector<BlockQ40> qweight = QuantizedToQ40(weight);
-  Tensor q4_result = LinearQ40(input, qweight, weight.shape);
+    Tensor f32_result = Linear(input, weight);
+    std::vector<BlockQ40> qweight = QuantizedToQ40(weight);
+    Tensor q4_result = LinearQ40(input, qweight, weight.shape);
 
-  if (f32_result.shape != q4_result.shape) {
-    throw std::runtime_error("CompareQ40Error: shape mismatch");
-  }
-
-  float max_err = 0.0f;
-  for (size_t i = 0; i < f32_result.TensorNum(); ++i) {
-    float err = std::abs(f32_result.data[i] - q4_result.data[i]);
-    if (err > max_err) {
-      max_err = err;
+    if (f32_result.shape != q4_result.shape) {
+        throw std::runtime_error("CompareQ40Error: shape mismatch");
     }
-  }
-  return max_err;
-}
+
+    float max_err = 0.0f;
+    for (size_t i = 0; i < f32_result.TensorNum(); ++i) {
+        float err = std::abs(f32_result.data[i] - q4_result.data[i]);
+        if (err > max_err) {
+        max_err = err;
+        }
+    }
+    return max_err;
+    }
 
 }
 
