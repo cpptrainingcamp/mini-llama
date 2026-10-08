@@ -649,7 +649,7 @@ MiniLlamaModel LoadModel(const std::string& config_path, const std::string& weig
             lw.wq = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wq"));
             lw.wk = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wk"));
             lw.wv = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wv"));
-            lw.wo = LoadTensorByName(wf, tensor_map, prefix + "wo");
+            lw.wo = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "wo"));
             lw.ffn_norm = LoadTensorByName(wf, tensor_map, prefix + "ffn_norm");
             lw.w_up = Tensor2QTensor(LoadTensorByName(wf, tensor_map, prefix + "w_up"));
             lw.w_down = Tensor2QTensor(LoadTensorByName(wf,tensor_map, prefix + "w_down"));

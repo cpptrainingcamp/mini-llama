@@ -146,6 +146,8 @@ void Tensor::TensorPrint() const {
     std::cout << std::endl;
 }
 
+
+
 Tensor MakeTensor1D(int d0, float fill){
     return Tensor({d0}, fill);
 }

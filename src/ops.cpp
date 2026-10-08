@@ -54,45 +54,12 @@ namespace LLaMA_Tensor{
     }
 
     Tensor MatrixMulti(const Tensor& t1, const Tensor& t2){
-        CheckTensorMulti(t1, t2);
-        //一维操作数按行/列向量提升: 1D 左->行 {1,n}, 1D 右->列 {n,1}
-        const int M = (t1.dim() == 1) ? 1 : t1.shape[0];
-        const int K = (t1.dim() == 1) ? t1.shape[0] : t1.shape[1];
-        const int N = (t2.dim() == 1) ? 1 : t2.shape[1];
-        const bool out2d = (t1.dim() == 2 && t2.dim() == 2);
-        Tensor multi_tensor;
-        multi_tensor.data = std::vector<float>(M * N, 0.0f);
-        //输出形状按 PyTorch matmul 语义去掉被提升的向量维度:
-        //  1D×1D -> {1}(点积标量), 1D×2D -> {N}, 2D×1D -> {M}, 2D×2D -> {M,N}
-        if(out2d){
-            multi_tensor.shape = {M, N};
-        }else if(t1.dim() == 1 && t2.dim() == 1){
-            multi_tensor.shape = {1};
-        }else{
-            multi_tensor.shape = {(t1.dim() == 1) ? N : M};
-        }
-        for (int i = 0; i < M; ++i) {
-            for (int k = 0; k < K; ++k) {
-                const float a = (t1.dim() == 1) ? t1.At1(k) : t1.At2(i, k);
-                if(out2d){
-                    for (int j = 0; j < N; ++j) {
-                        multi_tensor.At2(i, j) += a * t2.At2(k, j);
-                    }
-                }else if(t2.dim() == 1){
-                    multi_tensor.At1(i) += a * t2.At1(k);
-                }else{ // t1 1D, t2 2D (M == 1), 输出 1D {N}
-                    for (int j = 0; j < N; ++j) {
-                        multi_tensor.At1(j) += a * t2.At2(k, j);
-                    }
-                }
-            }
-        }
-        return multi_tensor;
+        return MatmulDispatch(t1, t2, DefaultMatmulMode());
     }
 
     Tensor Linear(const Tensor& x, const Tensor& weight){
         weight.CheckDim(2);   // weight 必须是 2D (out_features × in_features)
-        return MatrixMulti(x, TensorTrans(weight));
+        return LinearDispatch(x, weight, DefaultMatmulMode());
     }
 
     Tensor RMSNorm(const Tensor& x, const Tensor& weight, float eps){
@@ -216,6 +183,20 @@ namespace LLaMA_Tensor{
             ApplyNeoX(Q, pos, theta);
             ApplyNeoX(K, pos, theta);
         }
+    }
+
+    Tensor Linear(const Tensor& x, const QuantizedTensor& weight) {
+        switch (weight.type) {
+            case QuantType::kF32:
+            return Linear(x, QTensor2Tensor(weight));
+            case QuantType::kQ80:
+            return LinearQ80(x, weight.q80_data, weight.shape);
+            case QuantType::kQ40:
+            return LinearQ40(x, weight.q40_data, weight.shape);
+            case QuantType::kQ41:
+            return LinearQ41(x, weight.q41_data, weight.shape);
+        }
+        throw std::runtime_error("Linear: unknown quant type");
     }
 
 }
