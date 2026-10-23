@@ -24,6 +24,9 @@ namespace LLaMA_Tensor{
     Tensor Linear(const Tensor& x, const QuantizedTensor& weight);
     //RMSNorm归一化
     Tensor RMSNorm(const Tensor& x, const Tensor& weight, float eps);
+    //逐行RMSNorm归一化: x 形状 [rows, dim], weight 形状 [dim]
+    //  每一行独立计算均方根并归一化, 再逐元素乘以 weight
+    Tensor RMSNormRows(const Tensor& x, const Tensor& weight, float eps);
     //softmax：相关性得分转换为概率
     Tensor softmax(const Tensor& x);
     //SiLU激活单元
@@ -36,5 +39,10 @@ namespace LLaMA_Tensor{
     size_t ArgsMax(const Tensor& x);
     //旋转位置编码
     void rope(Tensor& Q, Tensor& K, int pos, float theta, RoPEtype type);
+    //批量逐token旋转位置编码
+    //  Q: [batch, n_heads, head_dim], K: [batch, n_kv_heads, head_dim]
+    //  第 b 个 token 使用 positions[b] 独立旋转
+    void rope_batch(Tensor& Q, Tensor& K, const std::vector<int>& positions,
+                    float theta, RoPEtype type);
 }
 

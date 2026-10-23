@@ -354,10 +354,22 @@ Tensor LinearDispatch(const Tensor& x, const Tensor& weight, MatmulMode mode) {
     case MatmulMode::kThreaded:
       return LinearThreaded(x, weight);
     case MatmulMode::kSimd:
+#ifdef MINI_LLAMA_USE_AVX2
       return LinearSimd(x, weight);
+#else
+      return LinearThreaded(x, weight);
+#endif
     case MatmulMode::kThreadedSimd:
+#ifdef MINI_LLAMA_USE_AVX2
       return LinearThreadedSimd(x, weight);
+#else
+      return LinearThreaded(x, weight);
+#endif
   }
+#ifdef MINI_LLAMA_USE_AVX2
   return LinearThreadedSimd(x, weight);
+#else
+  return LinearThreaded(x, weight);
+#endif
 }
 }

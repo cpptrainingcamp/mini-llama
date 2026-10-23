@@ -26,8 +26,7 @@ void ParallelFor(int n, const std::function<void(int begin, int end)>& fn){
 
     int n_threads = GetThreadCount();
 
-    constexpr int kMinChunk = 16;
-    if(n < n_threads * kMinChunk){
+    if(n < n_threads * kParallelForMinChunk){
         fn(0, n);
         return;
     }

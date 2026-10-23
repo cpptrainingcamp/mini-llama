@@ -21,6 +21,20 @@ namespace LLaMA_Tensor{
         memcpy(VCache.data.data() + base, v.data.data(), v.TensorNum() * sizeof(float));
     }
 
+    void KVCache::WriteRow(int layer, int pos, const float* k, const float* v){
+        if(layer < 0 || layer >= KCache.shape[0] ||
+            pos < 0 || pos   >= KCache.shape[1]){
+            throw std::out_of_range("kv cache index out of range");
+        }
+        if(k == nullptr || v == nullptr){
+            throw std::runtime_error("kv cache row pointer is null");
+        }
+        size_t base = KCache.FlatIndex({layer, pos, 0, 0});
+        size_t bytes = static_cast<size_t>(KCache.shape[2]) * KCache.shape[3] * sizeof(float);
+        memcpy(KCache.data.data() + base, k, bytes);
+        memcpy(VCache.data.data() + base, v, bytes);
+    }
+
     const float* KVCache::KeyPtr(int layer, int pos, int kv_head) const{
         if(layer < 0 || layer >= KCache.shape[0] ||
             pos < 0 || pos   >= KCache.shape[1] ||

@@ -12,6 +12,9 @@ namespace LLaMA_Tensor{
         KVCache(int layers, int max_seq_len, int n_kv_heads, int head_dim);
         //将一个token的k,v写入缓存
         void Write(int layer, int pos, const Tensor& k, const Tensor& v);
+        //将一个token的k,v行数据写入缓存 (批量路径用)
+        //  k/v 均指向 n_kv_heads * head_dim 个连续 float
+        void WriteRow(int layer, int pos, const float* k, const float* v);
         //获取KCache行向量地址
         const float* KeyPtr(int layer, int pos, int kv_head) const;
         //获取VCache行向量地址
