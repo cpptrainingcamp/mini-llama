@@ -18,16 +18,17 @@ namespace LLaMA_Tensor{
             throw std::runtime_error("json parse error");
         }
         for(auto obj : doc){
-            int id;
+            int64_t id64;
             std::string_view content_v;
             bool special;
-            auto err0 = obj["id"].get(id);
+            auto err0 = obj["id"].get(id64);
             auto err1 = obj["content"].get(content_v);
             auto err2 = obj["special"].get(special);
             if(err0 || err1 || err2){
                 std::cerr << "get token error" << std::endl;
                 continue;
             }
+            int id = static_cast<int>(id64);
             std::string content = std::string(content_v);
             id_2_content.push_back({id, content, special});
             content_2_id.push_back({content, id});
