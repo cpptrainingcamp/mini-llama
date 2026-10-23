@@ -25,10 +25,9 @@ void RequestContext::Finish(){
     total_ms = ElapsedMs(start);
 }
 
-void RequestContext::RecordEvent(const std::string& stage, double elapsed_ms
-    , int tokens = 0
-    , const std::string& detail = ""){
-        events.push_back({stage, elapsed_ms, tokens, detail});
+void RequestContext::RecordEvent(const std::string& stage, double elapsed_ms,
+                                 int tokens, const std::string& detail) {
+    events.push_back({stage, elapsed_ms, tokens, detail});
 }
 
 void RequestContext::SetError(const std::string& message){

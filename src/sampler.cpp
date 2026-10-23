@@ -52,7 +52,7 @@ int SampleFromCandidates(const std::vector<std::pair<float, int>>& candidates, f
     std::vector<float> probs(candidates.size(), 0.0f);
     float sum = 0.0f;
     for(size_t i = 0;i < probs.size();i++){
-        probs[i] = std::expf((candidates[i].first - max_val) / temperature);
+        probs[i] = std::exp((candidates[i].first - max_val) / temperature);
         sum += probs[i];
     }
     for(float& num : probs){
