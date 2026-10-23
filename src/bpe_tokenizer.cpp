@@ -1,4 +1,5 @@
 #include "../include/tokenizer.h"
+#include <limits>
 
 
 namespace LLaMA_Tensor{
@@ -176,9 +177,12 @@ namespace{
                 return false;
             }
             auto obj = doc.get_object();
-            auto erro0 = obj["bos_id"].get(bos_id_);
-            auto erro1 = obj["eos_id"].get(eos_id_);
-            auto erro2 = obj["unk_id"].get(unk_id_);
+            int64_t bos_id_value = bos_id_;
+            int64_t eos_id_value = eos_id_;
+            int64_t unk_id_value = unk_id_;
+            auto erro0 = obj["bos_id"].get(bos_id_value);
+            auto erro1 = obj["eos_id"].get(eos_id_value);
+            auto erro2 = obj["unk_id"].get(unk_id_value);
             if(erro0){
                 std::cerr << "failed to find bos_id" << std::endl;
                 return false;
@@ -191,6 +195,9 @@ namespace{
                 std::cerr << "failed to find unk_id" << std::endl;
                 return false;
             }
+            bos_id_ = static_cast<int>(bos_id_value);
+            eos_id_ = static_cast<int>(eos_id_value);
+            unk_id_ = static_cast<int>(unk_id_value);
         }
 
         //byte - unicode
