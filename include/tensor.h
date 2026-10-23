@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace LLaMA_Tensor{
@@ -19,6 +20,14 @@ namespace LLaMA_Tensor{
         const int dim() const {
             return shape.size();
         }
+        //兼容 CUDA 模块使用的访问器
+        size_t size() const {
+            return data.size();
+        }
+        int num_dims() const {
+            return static_cast<int>(shape.size());
+        }
+        std::string ShapeStringShort() const;
         //根据多维索引计算线性索引
         size_t FlatIndex(const std::vector<int>& MultiIndex) const;
         //根据多维索引获取元素

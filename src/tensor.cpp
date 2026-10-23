@@ -7,6 +7,18 @@
 
 namespace LLaMA_Tensor {
 
+std::string Tensor::ShapeStringShort() const {
+    std::string out = "[";
+    for(size_t i = 0; i < shape.size(); ++i){
+        if(i != 0){
+            out += ", ";
+        }
+        out += std::to_string(shape[i]);
+    }
+    out += "]";
+    return out;
+}
+
 void Tensor::CheckDim(int dim) const{
     if(dim != shape.size()){
         throw std::runtime_error("dimension(s) are not mathed, your tensor's dimension(s) are "
