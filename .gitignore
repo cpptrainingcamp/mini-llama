@@ -1,0 +1,12 @@
+/build*/
+/models/
+/include.bak-*
+/src.bak-*
+/include/mini-llama.code-workspace
+compile_commands.json
+*.o
+*.a
+*.so
+*.dylib
+*.gguf
+.cache/
