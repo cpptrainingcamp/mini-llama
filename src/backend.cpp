@@ -1,8 +1,9 @@
 #include "../include/backend.h"
-#include "../include/cuda_runtime.h"
 
 #include <stdexcept>
 #include <string>
+
+#include "../include/cuda_runtime.h"
 
 namespace LLaMA_Tensor{
 bool ParseBackendKind(const std::string& text, BackendKind& kind){
@@ -27,56 +28,57 @@ std::string BackendKindName(BackendKind kind){
     return "unknown";
 }
 
-bool CudaBackendBuilt() { return CudaRuntimeBuilt(); }
-
-bool CudaBackendAvailable(int device_id) {
-  try {
-    int count = CudaDeviceCount();
-    return device_id >= 0 && device_id < count;
-  } catch (const std::exception&) {
-    return false;
-  }
+bool CudaBackendBuilt(){
+    return CudaRuntimeBuilt();
 }
 
-std::string CudaDeviceSummary(int device_id) {
-  try {
-    return CudaFormatDeviceInfo(CudaGetDeviceInfo(device_id));
-  } catch (const std::exception& e) {
-    return e.what();
-  }
+bool CudaBackendAvailable(int device_id){
+    try{
+        int count = CudaDeviceCount();
+        return device_id >= 0 && device_id < count;
+    }catch(const std::exception&){
+        return false;
+    }
 }
 
-void ValidateBackend(const BackendConfig& config) {
-  if (config.kind == BackendKind::kCpu) {
-    if (config.device_id_set) {
-      throw std::runtime_error(
-          "--device can only be used with --backend cuda.");
+std::string CudaDeviceSummary(int device_id){
+    try{
+        return CudaFormatDeviceInfo(CudaGetDeviceInfo(device_id));
+    }catch(const std::exception& e){
+        return e.what();
     }
-    return;
-  }
-
-  if (config.kind == BackendKind::kCuda) {
-    if (!CudaBackendBuilt()) {
-      throw std::runtime_error(
-          "CUDA backend was not built. Reconfigure with -DMINI_LLAMA_CUDA=ON "
-          "on a NVIDIA CUDA machine.");
-    }
-    if (!CudaBackendAvailable(config.device_id)) {
-      throw std::runtime_error(CudaDeviceSummary(config.device_id));
-    }
-    return;
-  }
-
-  throw std::runtime_error("unknown backend");
 }
 
-std::string BackendExecutionNote(const BackendConfig& config) {
-  if (config.kind == BackendKind::kCpu) {
-    return "compute: cpu";
-  }
-  return "compute: cuda Linear (F32/Q8_0/Q4_0/Q4_1 where uploaded) + CUDA "
-         "attention over GPU KV cache + device-resident Decode path; CPU "
-         "sampler";
+void ValidateBackend(const BackendConfig& config){
+    if(config.kind == BackendKind::kCpu){
+        if(config.device_id_set){
+            throw std::runtime_error(
+                "--device can only be used with --backend cuda.");
+        }
+        return;
+    }
+
+    if(config.kind == BackendKind::kCuda){
+        if(!CudaBackendBuilt()){
+            throw std::runtime_error(
+                "CUDA backend was not built. Reconfigure with "
+                "-DMINI_LLAMA_CUDA=ON on a NVIDIA CUDA machine.");
+        }
+        if(!CudaBackendAvailable(config.device_id)){
+            throw std::runtime_error(CudaDeviceSummary(config.device_id));
+        }
+        return;
+    }
+
+    throw std::runtime_error("unknown backend");
+}
+
+std::string BackendExecutionNote(const BackendConfig& config){
+    if(config.kind == BackendKind::kCpu){
+        return "compute: cpu";
+    }
+    return "compute: cuda Linear (F32/Q8_0/Q4_0/Q4_1) + CUDA attention over "
+           "GPU KV cache + device-resident batch forward; CPU sampler";
 }
 
 }
