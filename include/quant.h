@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "ops.h"
@@ -29,6 +30,27 @@ Tensor DequantizedFromQ40(const std::vector<BlockQ40>& blocks, const std::vector
 std::vector<BlockQ41> QuantizedToQ41(const Tensor& t);
 //Q4_1反量化
 Tensor DequantizedFromQ41(const std::vector<BlockQ41>& blocks, const std::vector<int>& shape);
+
+// ---------------------------------------------------------------------------
+// Q8_0 投影算子的运行时分发路径
+//   kScalar          标量逐元素实现(LinearQuantizedImpl)，同时是无 SIMD 时的回退
+//   kPerElementSimd  逐输出元素并行 + AVX2 四路 FMA(改造前的原始内核)
+//   kTiledSimd       8x8 tile 微内核 + 分块并行(改造后实现，默认)
+// 该开关只影响 LinearQ80；Q4_0/Q4_1 与 F32 MatmulMode 不受影响。
+// ---------------------------------------------------------------------------
+enum class LinearQ80Mode {
+    kScalar,
+    kPerElementSimd,
+    kTiledSimd,
+};
+//默认分发给 tile 微内核。
+LinearQ80Mode DefaultLinearQ80Mode();
+//设置/读取进程级运行时分发路径。
+void SetLinearQ80Mode(LinearQ80Mode mode);
+LinearQ80Mode GetLinearQ80Mode();
+//路径名的字符串表示与解析，供 CLI / 报告使用。
+const char* LinearQ80ModeName(LinearQ80Mode mode);
+bool ParseLinearQ80Mode(const std::string& text, LinearQ80Mode& out);
 
 //Q8_0投影算子
 Tensor LinearQ80(const Tensor& x, const std::vector<BlockQ80>& weight, const std::vector<int>& weight_shape);

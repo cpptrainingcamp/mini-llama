@@ -516,7 +516,214 @@ static inline float HsumF32x8(__m256 v) {
     __m128 s3 = _mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 0x01));
     return _mm_cvtss_f32(s3);
 }
+
+// Q8_0 tile 微内核：计算 out[r0, r0+r_nums) x [j0, j0+j_nums) 这一块输出。
+// 内层沿用原有的"四路 FMA 一次处理整个 32 元素量化块"方案：每个输出点沿
+// 整个 k 维在 4 个 YMM 累加器中累加完毕，才归约并写回一次（无中途写回）。
+// 与 F32 MicroKernel8x8Avx2 的差异：Q8_0 权重按 32 元素块量化存储、每个输出
+// 列有各自的 fp16 scale，8 列同一 k 位置的反量化权重无法用单条 gather 取齐，
+// 因此 SIMD 放在块内 k 维；跨列复用由 tile 内层循环共享同一个 x_row 指针获得。
+static void MicroKernelQ80Avx2(const float* x,
+                               const BlockQ80* weight,
+                               float* out,
+                               int r0, int j0, int r_nums, int j_nums,
+                               int in_features, int out_features,
+                               int n_blocks_per_row) {
+    if (r_nums <= 0 || j_nums <= 0) {
+        return;
+    }
+    for (int r = 0; r < r_nums; ++r) {
+        // 每行只取一次 x_row，tile 内各输出列复用
+        const float* x_row = x + static_cast<size_t>(r0 + r) * in_features;
+        for (int j = 0; j < j_nums; ++j) {
+            int j_global = j0 + j;
+            int block_base = n_blocks_per_row * j_global;
+            __m256 sum_vec = _mm256_setzero_ps();  // 8 路累加器
+            float scaler = 0.0f;
+            for (int b = 0; b < n_blocks_per_row; ++b) {
+                const BlockQ80& block = weight[block_base + b];
+                float d = Fp162Float(block.scale);
+                int base_k = b * kQ80BlockSize;
+                int k_end = std::min(base_k + kQ80BlockSize, in_features);
+                int k = base_k;
+
+                // 4 路独立累加器
+                __m256 acc0 = _mm256_setzero_ps();
+                __m256 acc1 = _mm256_setzero_ps();
+                __m256 acc2 = _mm256_setzero_ps();
+                __m256 acc3 = _mm256_setzero_ps();
+
+                for (; k + 32 <= k_end; k += 32) {
+                    // 一次性加载 32 个 int8
+                    __m256i q8 = _mm256_loadu_si256((const __m256i*)(block.qs + (k - base_k)));
+                    // 拆成 4 组，每组 8 个 int8 -> int16
+                    __m128i q8_lo = _mm256_castsi256_si128(q8);
+                    __m128i q8_hi = _mm256_extracti128_si256(q8, 1);
+                    __m256i q16_0 = _mm256_cvtepi8_epi16(q8_lo);
+                    __m256i q16_1 = _mm256_cvtepi8_epi16(_mm_srli_si128(q8_lo, 8));
+                    __m256i q16_2 = _mm256_cvtepi8_epi16(q8_hi);
+                    __m256i q16_3 = _mm256_cvtepi8_epi16(_mm_srli_si128(q8_hi, 8));
+                    // 每组 int16 -> int32 -> float，再乘以 scale
+                    __m256 qf_0 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_0)), _mm256_set1_ps(d));
+                    __m256 qf_1 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_1)), _mm256_set1_ps(d));
+                    __m256 qf_2 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_2)), _mm256_set1_ps(d));
+                    __m256 qf_3 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_3)), _mm256_set1_ps(d));
+                    // 加载输入
+                    __m256 xf_0 = _mm256_loadu_ps(x_row + k);
+                    __m256 xf_1 = _mm256_loadu_ps(x_row + k + 8);
+                    __m256 xf_2 = _mm256_loadu_ps(x_row + k + 16);
+                    __m256 xf_3 = _mm256_loadu_ps(x_row + k + 24);
+                    // 4 条 FMA 指令并行累加到 4 个独立累加器
+                    acc0 = _mm256_fmadd_ps(qf_0, xf_0, acc0);
+                    acc1 = _mm256_fmadd_ps(qf_1, xf_1, acc1);
+                    acc2 = _mm256_fmadd_ps(qf_2, xf_2, acc2);
+                    acc3 = _mm256_fmadd_ps(qf_3, xf_3, acc3);
+                }
+                sum_vec = _mm256_add_ps(sum_vec, acc0);
+                sum_vec = _mm256_add_ps(sum_vec, acc1);
+                sum_vec = _mm256_add_ps(sum_vec, acc2);
+                sum_vec = _mm256_add_ps(sum_vec, acc3);
+                // 归约
+                scaler += HsumF32x8(sum_vec);
+                sum_vec = _mm256_setzero_ps();
+
+                // 回退：不足 32 个元素的尾部（或整块不满）走标量
+                for (; k < k_end; ++k) {
+                    float w = d * static_cast<float>(block.qs[k - base_k]);
+                    scaler += w * x_row[k];
+                }
+            }
+            out[static_cast<size_t>(r0 + r) * out_features + j_global] = scaler;
+        }
+    }
+}
+
+// 逐输出元素并行的原始 AVX2 内核（改造前的实现）。
+// 保留它作为独立分发路径，便于在同一负载下对比"改造前整块内核"与
+// "改造后 tile 微内核"。每个 (row, j) 独立计算一个输出点：内层仍是
+// "四路 FMA 一次处理整个 32 元素量化块 + 尾块标量回退"。
+static void LinearQ80PerElementAvx2(const Tensor& x,
+                                    const std::vector<BlockQ80>& weight,
+                                    int rows, int in_features, int out_features,
+                                    int n_blocks_per_row, Tensor& result) {
+    auto f = [&](int begin, int end) {
+        for (int flat_index = begin; flat_index < end; ++flat_index) {
+            int row = flat_index / out_features;
+            int j = flat_index % out_features;
+            const float* x_row =
+                x.data.data() + static_cast<size_t>(row) * in_features;
+            int block_base = j * n_blocks_per_row;
+            __m256 sum_vec = _mm256_setzero_ps();  // 8 路累加器
+            float scaler = 0.0f;
+            for (int b = 0; b < n_blocks_per_row; ++b) {
+                const BlockQ80& block = weight[block_base + b];
+                float d = Fp162Float(block.scale);
+                int base_k = b * kQ80BlockSize;
+                int k_end = std::min(base_k + kQ80BlockSize, in_features);
+                int k = base_k;
+
+                // 4 路独立累加器
+                __m256 acc0 = _mm256_setzero_ps();
+                __m256 acc1 = _mm256_setzero_ps();
+                __m256 acc2 = _mm256_setzero_ps();
+                __m256 acc3 = _mm256_setzero_ps();
+
+                for (; k + 32 <= k_end; k += 32) {
+                    // 一次性加载 32 个 int8
+                    __m256i q8 = _mm256_loadu_si256(
+                        (const __m256i*)(block.qs + (k - base_k)));
+                    // 拆成 4 组，每组 8 个 int8 -> int16
+                    __m128i q8_lo = _mm256_castsi256_si128(q8);
+                    __m128i q8_hi = _mm256_extracti128_si256(q8, 1);
+                    __m256i q16_0 = _mm256_cvtepi8_epi16(q8_lo);
+                    __m256i q16_1 = _mm256_cvtepi8_epi16(_mm_srli_si128(q8_lo, 8));
+                    __m256i q16_2 = _mm256_cvtepi8_epi16(q8_hi);
+                    __m256i q16_3 = _mm256_cvtepi8_epi16(_mm_srli_si128(q8_hi, 8));
+                    // 每组 int16 -> int32 -> float，再乘以 scale
+                    __m256 qf_0 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_0)), _mm256_set1_ps(d));
+                    __m256 qf_1 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_1)), _mm256_set1_ps(d));
+                    __m256 qf_2 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_2)), _mm256_set1_ps(d));
+                    __m256 qf_3 = _mm256_mul_ps(
+                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_3)), _mm256_set1_ps(d));
+                    // 加载输入
+                    __m256 xf_0 = _mm256_loadu_ps(x_row + k);
+                    __m256 xf_1 = _mm256_loadu_ps(x_row + k + 8);
+                    __m256 xf_2 = _mm256_loadu_ps(x_row + k + 16);
+                    __m256 xf_3 = _mm256_loadu_ps(x_row + k + 24);
+                    // 4 条 FMA 指令并行累加到 4 个独立累加器
+                    acc0 = _mm256_fmadd_ps(qf_0, xf_0, acc0);
+                    acc1 = _mm256_fmadd_ps(qf_1, xf_1, acc1);
+                    acc2 = _mm256_fmadd_ps(qf_2, xf_2, acc2);
+                    acc3 = _mm256_fmadd_ps(qf_3, xf_3, acc3);
+                }
+                sum_vec = _mm256_add_ps(sum_vec, acc0);
+                sum_vec = _mm256_add_ps(sum_vec, acc1);
+                sum_vec = _mm256_add_ps(sum_vec, acc2);
+                sum_vec = _mm256_add_ps(sum_vec, acc3);
+                // 归约
+                scaler += HsumF32x8(sum_vec);
+                sum_vec = _mm256_setzero_ps();
+
+                // 回退：不足 32 个元素的尾部（或整块不满）走标量
+                for (; k < k_end; ++k) {
+                    float w = d * static_cast<float>(block.qs[k - base_k]);
+                    scaler += w * x_row[k];
+                }
+            }
+            result.data[static_cast<size_t>(row) * out_features + j] = scaler;
+        }
+    };
+    ParallelFor(rows * out_features, f);
+}
+
 #endif
+
+// ---------------------------------------------------------------------------
+// LinearQ80 运行时分发状态
+// ---------------------------------------------------------------------------
+static LinearQ80Mode g_linear_q80_mode = LinearQ80Mode::kTiledSimd;
+
+LinearQ80Mode DefaultLinearQ80Mode() { return LinearQ80Mode::kTiledSimd; }
+
+LinearQ80Mode GetLinearQ80Mode() { return g_linear_q80_mode; }
+
+void SetLinearQ80Mode(LinearQ80Mode mode) { g_linear_q80_mode = mode; }
+
+const char* LinearQ80ModeName(LinearQ80Mode mode) {
+    switch (mode) {
+        case LinearQ80Mode::kScalar:
+            return "scalar";
+        case LinearQ80Mode::kPerElementSimd:
+            return "per-element";
+        case LinearQ80Mode::kTiledSimd:
+            return "tiled";
+    }
+    return "unknown";
+}
+
+bool ParseLinearQ80Mode(const std::string& text, LinearQ80Mode& out) {
+    if (text == "scalar") {
+        out = LinearQ80Mode::kScalar;
+        return true;
+    }
+    if (text == "per-element" || text == "per_element" ||
+        text == "perelement") {
+        out = LinearQ80Mode::kPerElementSimd;
+        return true;
+    }
+    if (text == "tiled") {
+        out = LinearQ80Mode::kTiledSimd;
+        return true;
+    }
+    return false;
+}
 
 Tensor LinearQ80(const Tensor& x, const std::vector<BlockQ80>& weight, const std::vector<int>& weight_shape){
     #if !defined(MINI_LLAMA_USE_AVX2) && !defined(MINI_LLAMA_USE_NEON)
@@ -556,6 +763,12 @@ Tensor LinearQ80(const Tensor& x, const std::vector<BlockQ80>& weight, const std
         throw std::runtime_error("LinearQ80: block count mismatch: expected " +
                                 std::to_string(expected_blocks) + ", got " +
                                 std::to_string(weight.size()));
+    }
+
+    // 标量路径：与无 SIMD 构建完全相同的实现，作为参考/回退基线。
+    if (GetLinearQ80Mode() == LinearQ80Mode::kScalar) {
+        return LinearQuantizedImpl<BlockQ80, kQ80BlockSize>(
+            x, weight, weight_shape, DequantQ80);
     }
 
     Tensor result(is_1d ? std::vector<int>{out_features} : std::vector<int>{rows, out_features}, 0.0f);
@@ -607,74 +820,46 @@ Tensor LinearQ80(const Tensor& x, const std::vector<BlockQ80>& weight, const std
     PrallelFor(rows * out_features, f);
     return result;
     #elif defined(MINI_LLAMA_USE_AVX2)
-    auto f = [&](int begin, int end){
-        for(int flat_index = begin;flat_index < end;flat_index++){
-            int row = flat_index / out_features;
-            int j = flat_index % out_features;
-            const float* x_row = x.data.data() + row * in_features;
-            int block_base = n_blocks_per_row * j;
-            __m256 sum_vec = _mm256_setzero_ps(); //8路累加器
-            float scaler = 0.0f;
-            for(int b = 0;b < n_blocks_per_row;b++){
-                const BlockQ80& block = weight[block_base + b];
-                float d = Fp162Float(block.scale);
-                int base_k = b * kQ80BlockSize;
-                int k_end = std::min(base_k + kQ80BlockSize, in_features);
-                int k = base_k;
+    // 逐输出元素并行的原始内核（改造前实现），用于分发路径对比。
+    if (GetLinearQ80Mode() == LinearQ80Mode::kPerElementSimd) {
+        LinearQ80PerElementAvx2(x, weight, rows, in_features, out_features,
+                                n_blocks_per_row, result);
+        return result;
+    }
+    // 分块多线程：与 F32 LinearThreadedSimd 的方案一致，把输出按 row_blocks x
+    // col_blocks 的 tile 划分，对 tile 编号做 ParallelFor（而不是逐输出元素
+    // 切分），tile 内复用同一个 x_row 指针。内层仍由 MicroKernelQ80Avx2 沿用
+    // 四路 FMA 整块内核 + 尾块标量回退。
+    const int row_blocks = 8;
+    const int n_row_blocks = (rows + row_blocks - 1) / row_blocks;
+    // ParallelFor 在任务数 < 线程数 * kParallelForMinChunk 时会退化为单线程
+    // 内联执行。默认 8 列 tile 在 out_features 较窄时（如 896 -> 112 个 tile）
+    // 达不到阈值，会丢掉并行度；这里自适应缩小 tile 宽度，保持与改造前相同的
+    // 多线程粒度。若缩到 1 列仍达不到阈值，说明本来就会内联，则保留 8 列以
+    // 最大化 x_row 的跨列复用。
+    const int min_tiles = GetThreadCount() * kParallelForMinChunk;
+    int col_blocks = 8;
+    for (int cand = 8; cand >= 1; cand /= 2) {
+        const int n_tiles = n_row_blocks * ((out_features + cand - 1) / cand);
+        if (n_tiles >= min_tiles) {
+            col_blocks = cand;
+            break;
+        }
+    }
+    const int n_col_blocks = (out_features + col_blocks - 1) / col_blocks;
 
-                //4路独立累加器
-                __m256 acc0 = _mm256_setzero_ps();
-                __m256 acc1 = _mm256_setzero_ps();
-                __m256 acc2 = _mm256_setzero_ps();
-                __m256 acc3 = _mm256_setzero_ps();
-
-                for(;k + 32 <= k_end; k += 32){
-                    //一次性加载32个int8
-                    __m256i q8 = _mm256_loadu_si256((const __m256i*)(block.qs + (k - base_k)));
-                    //拆成4组，每组8个int8 -> int16
-                    __m128i q8_lo = _mm256_castsi256_si128(q8); 
-                    __m128i q8_hi = _mm256_extracti128_si256(q8, 1); 
-                    __m256i q16_0 = _mm256_cvtepi8_epi16(q8_lo); 
-                    __m256i q16_1 = _mm256_cvtepi8_epi16(_mm_srli_si128(q8_lo, 8));
-                    __m256i q16_2 = _mm256_cvtepi8_epi16(q8_hi);
-                    __m256i q16_3 = _mm256_cvtepi8_epi16(_mm_srli_si128(q8_hi, 8)); 
-                    //每组 int16 -> int32 -> float，再乘以 scale
-                    __m256 qf_0 = _mm256_mul_ps(
-                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_0)), _mm256_set1_ps(d));
-                    __m256 qf_1 = _mm256_mul_ps(
-                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_1)), _mm256_set1_ps(d));
-                    __m256 qf_2 = _mm256_mul_ps(
-                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_2)), _mm256_set1_ps(d));
-                    __m256 qf_3 = _mm256_mul_ps(
-                        _mm256_cvtepi32_ps(I16x8ToI32x8(q16_3)), _mm256_set1_ps(d));
-                    //加载输入
-                    __m256 xf_0 = _mm256_loadu_ps(x_row + k);
-                    __m256 xf_1 = _mm256_loadu_ps(x_row + k + 8);
-                    __m256 xf_2 = _mm256_loadu_ps(x_row + k + 16);
-                    __m256 xf_3 = _mm256_loadu_ps(x_row + k + 24);
-                    //4条FMA指令并行累加到 4 个独立累加器
-                    acc0 = _mm256_fmadd_ps(qf_0, xf_0, acc0);
-                    acc1 = _mm256_fmadd_ps(qf_1, xf_1, acc1);
-                    acc2 = _mm256_fmadd_ps(qf_2, xf_2, acc2);
-                    acc3 = _mm256_fmadd_ps(qf_3, xf_3, acc3);
-                }
-                sum_vec = _mm256_add_ps(sum_vec, acc0);
-                sum_vec = _mm256_add_ps(sum_vec, acc1);
-                sum_vec = _mm256_add_ps(sum_vec, acc2);
-                sum_vec = _mm256_add_ps(sum_vec, acc3);
-                //归约
-                scaler += HsumF32x8(sum_vec);
-                sum_vec = _mm256_setzero_ps();
-
-                for (; k < k_end; ++k) {
-                    float w = d * static_cast<float>(block.qs[k - base_k]);
-                    scaler += w * x_row[k];
-                }
-            }
-            result.data[static_cast<size_t>(row) * out_features + j] = scaler;
+    auto f = [&](int begin, int end) {
+        for (int b = begin; b < end; ++b) {
+            int r0 = (b / n_col_blocks) * row_blocks;
+            int j0 = (b % n_col_blocks) * col_blocks;
+            int r_nums = std::min(rows - r0, row_blocks);
+            int j_nums = std::min(out_features - j0, col_blocks);
+            MicroKernelQ80Avx2(x.data.data(), weight.data(), result.data.data(),
+                               r0, j0, r_nums, j_nums,
+                               in_features, out_features, n_blocks_per_row);
         }
     };
-    ParallelFor(rows * out_features, f);
+    ParallelFor(n_col_blocks * n_row_blocks, f);
     return result;
     #endif
 }
